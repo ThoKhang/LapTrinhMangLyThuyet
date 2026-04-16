@@ -6,17 +6,15 @@ import javax.swing.border.TitledBorder;
 import java.awt.*;
 import java.io.*;
 import java.net.*;
-import java.util.*;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 
 public class ChatServerGUI extends JFrame {
     private static final int PORT = 5555;
-    static Map<String, String> userDb = new ConcurrentHashMap<>();
     static Map<String, Room> rooms = new ConcurrentHashMap<>();
     static List<ClientHandler> onlineUsers = new CopyOnWriteArrayList<>();
 
-    // --- CÁC COMPONENT GIAO DIỆN ---
     private JTextArea logArea = new JTextArea();
     private JLabel lblOnline = new JLabel("ONLINE: 0", SwingConstants.CENTER);
     private JLabel lblRoomCount = new JLabel("SỐ PHÒNG: 0", SwingConstants.CENTER);
@@ -26,14 +24,24 @@ public class ChatServerGUI extends JFrame {
     private DefaultListModel<String> userListModel = new DefaultListModel<>();
     private JList<String> userList = new JList<>(userListModel);
 
+    // Dark Theme Server
+    private Color bgDark = new Color(32, 34, 37);
+    private Color bgPanel = new Color(47, 49, 54);
+    private Color textMain = new Color(220, 221, 222);
+
     public ChatServerGUI() {
         setTitle("MÁY CHỦ TRUNG TÂM (ADMIN DASHBOARD)");
         setSize(900, 600);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
-        rooms.put("Lobby", new Room("Lobby")); // Phòng mặc định
-        
+        // KHỞI TẠO DATABASE VÀ LOAD PHÒNG
+        DatabaseManager.init();
+        List<String> dbRooms = DatabaseManager.getAllRooms();
+        for (String rName : dbRooms) {
+            rooms.put(rName, new Room(rName));
+        }
+
         initUI();
         startServerThread();
     }
@@ -41,71 +49,63 @@ public class ChatServerGUI extends JFrame {
     private void initUI() {
         JPanel mainPanel = new JPanel(new BorderLayout(15, 15));
         mainPanel.setBorder(new EmptyBorder(15, 15, 15, 15));
-        mainPanel.setBackground(new Color(240, 242, 245));
+        mainPanel.setBackground(bgDark);
 
-        // 1. HEADER - THỐNG KÊ (Top)
+        // Header
         JPanel statsPanel = new JPanel(new GridLayout(1, 2, 10, 0));
         statsPanel.setOpaque(false);
-        lblOnline.setFont(new Font("Segoe UI", Font.BOLD, 20)); lblOnline.setForeground(new Color(46, 204, 113));
-        lblRoomCount.setFont(new Font("Segoe UI", Font.BOLD, 20)); lblRoomCount.setForeground(new Color(52, 152, 219));
-        
-        JPanel pnlOnline = createStyledPanel(lblOnline);
-        JPanel pnlRooms = createStyledPanel(lblRoomCount);
-        statsPanel.add(pnlOnline); statsPanel.add(pnlRooms);
+        lblOnline.setFont(new Font("Segoe UI", Font.BOLD, 20)); lblOnline.setForeground(new Color(59, 165, 92));
+        lblRoomCount.setFont(new Font("Segoe UI", Font.BOLD, 20)); lblRoomCount.setForeground(new Color(88, 101, 242));
+        statsPanel.add(createStyledPanel(lblOnline)); statsPanel.add(createStyledPanel(lblRoomCount));
         mainPanel.add(statsPanel, BorderLayout.NORTH);
 
-        // 2. NHẬT KÝ LOGS (Left/Center)
-        logArea.setEditable(false);
-        logArea.setFont(new Font("Consolas", Font.PLAIN, 14));
-        logArea.setBackground(new Color(30, 30, 30)); // Nền đen cho chữ ngầu
-        logArea.setForeground(new Color(0, 255, 0));  // Chữ xanh lá cây
+        // Log Area
+        logArea.setEditable(false); logArea.setFont(new Font("Consolas", Font.PLAIN, 14));
+        logArea.setBackground(new Color(14, 14, 14)); logArea.setForeground(new Color(59, 165, 92));
         JScrollPane scrollLog = new JScrollPane(logArea);
-        scrollLog.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(Color.GRAY), "Terminal Logs", TitledBorder.LEFT, TitledBorder.TOP, new Font("Segoe UI", Font.BOLD, 12), Color.DARK_GRAY));
+        scrollLog.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(Color.DARK_GRAY), "Terminal Logs", TitledBorder.LEFT, TitledBorder.TOP, new Font("Segoe UI", Font.BOLD, 12), textMain));
         mainPanel.add(scrollLog, BorderLayout.CENTER);
 
-        // 3. KHU VỰC QUẢN LÝ (Right)
-        JPanel rightPanel = new JPanel(new GridLayout(2, 1, 10, 15));
-        rightPanel.setOpaque(false);
+        // Right Panel
+        JPanel rightPanel = new JPanel(new GridLayout(2, 1, 10, 15)); rightPanel.setOpaque(false);
         rightPanel.setPreferredSize(new Dimension(280, 0));
 
-        // 3.1. Quản lý phòng
-        JPanel roomPanel = new JPanel(new BorderLayout(0, 5));
-        roomPanel.setOpaque(false);
-        roomPanel.setBorder(BorderFactory.createTitledBorder(null, "Quản Lý Phòng Chat", TitledBorder.DEFAULT_JUSTIFICATION, TitledBorder.DEFAULT_POSITION, new Font("Segoe UI", Font.BOLD, 14)));
-        roomList.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        // Room Panel
+        JPanel roomPanel = new JPanel(new BorderLayout(0, 5)); roomPanel.setOpaque(false);
+        roomPanel.setBorder(BorderFactory.createTitledBorder(null, "Quản Lý Kênh", TitledBorder.DEFAULT_JUSTIFICATION, TitledBorder.DEFAULT_POSITION, new Font("Segoe UI", Font.BOLD, 14), textMain));
+        roomList.setFont(new Font("Segoe UI", Font.PLAIN, 14)); roomList.setBackground(bgPanel); roomList.setForeground(textMain);
         roomPanel.add(new JScrollPane(roomList), BorderLayout.CENTER);
         
-        JPanel roomActionP = new JPanel(new GridLayout(1, 2, 5, 0));
-        JButton btnAddRoom = new JButton("Thêm Mới"); btnAddRoom.setBackground(new Color(52, 152, 219)); btnAddRoom.setForeground(Color.WHITE);
-        JButton btnDelRoom = new JButton("Xóa Phòng"); btnDelRoom.setBackground(new Color(231, 76, 60)); btnDelRoom.setForeground(Color.WHITE);
+        JPanel roomActionP = new JPanel(new GridLayout(1, 2, 5, 0)); roomActionP.setOpaque(false);
+        JButton btnAddRoom = new JButton("Thêm Mới"); btnAddRoom.setBackground(new Color(88, 101, 242)); btnAddRoom.setForeground(Color.WHITE);
+        JButton btnDelRoom = new JButton("Xóa Kênh"); btnDelRoom.setBackground(new Color(237, 66, 69)); btnDelRoom.setForeground(Color.WHITE);
         roomActionP.add(btnAddRoom); roomActionP.add(btnDelRoom);
         roomPanel.add(roomActionP, BorderLayout.SOUTH);
 
-        // 3.2. Quản lý Users
-        JPanel userPanel = new JPanel(new BorderLayout(0, 5));
-        userPanel.setOpaque(false);
-        userPanel.setBorder(BorderFactory.createTitledBorder(null, "Thành viên trong phòng", TitledBorder.DEFAULT_JUSTIFICATION, TitledBorder.DEFAULT_POSITION, new Font("Segoe UI", Font.BOLD, 14)));
-        userList.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        // User Panel
+        JPanel userPanel = new JPanel(new BorderLayout(0, 5)); userPanel.setOpaque(false);
+        userPanel.setBorder(BorderFactory.createTitledBorder(null, "Thành viên Online", TitledBorder.DEFAULT_JUSTIFICATION, TitledBorder.DEFAULT_POSITION, new Font("Segoe UI", Font.BOLD, 14), textMain));
+        userList.setFont(new Font("Segoe UI", Font.PLAIN, 14)); userList.setBackground(bgPanel); userList.setForeground(textMain);
         userPanel.add(new JScrollPane(userList), BorderLayout.CENTER);
         
-        JButton btnKick = new JButton("Đuổi Khỏi Phòng (KICK)");
-        btnKick.setBackground(new Color(243, 156, 18)); btnKick.setForeground(Color.WHITE); btnKick.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        JButton btnKick = new JButton("KICK NGƯỜI DÙNG");
+        btnKick.setBackground(new Color(250, 166, 26)); btnKick.setForeground(Color.WHITE);
         userPanel.add(btnKick, BorderLayout.SOUTH);
 
-        rightPanel.add(roomPanel);
-        rightPanel.add(userPanel);
+        rightPanel.add(roomPanel); rightPanel.add(userPanel);
         mainPanel.add(rightPanel, BorderLayout.EAST);
-
         add(mainPanel);
 
-        // --- SỰ KIỆN GIAO DIỆN ---
+        // Events
         roomList.addListSelectionListener(e -> updateRoomUserUI());
 
         btnAddRoom.addActionListener(e -> {
-            String name = JOptionPane.showInputDialog(this, "Nhập tên phòng mới:");
+            String name = JOptionPane.showInputDialog(this, "Nhập tên kênh mới:");
             if (name != null && !name.trim().isEmpty() && !rooms.containsKey(name)) {
-                rooms.put(name.trim(), new Room(name.trim()));
-                log("[SYSTEM] Đã tạo phòng mới: " + name);
+                String safeName = name.trim().toLowerCase().replace(" ", "-");
+                DatabaseManager.addRoom(safeName); // Lưu DB
+                rooms.put(safeName, new Room(safeName));
+                log("[SYSTEM] Đã tạo kênh: " + safeName);
                 updateRoomListUI();
             }
         });
@@ -113,9 +113,10 @@ public class ChatServerGUI extends JFrame {
         btnDelRoom.addActionListener(e -> {
             String selected = roomList.getSelectedValue();
             if (selected != null) {
-                if (selected.equals("Lobby")) { JOptionPane.showMessageDialog(this, "Tuyệt đối không được xóa phòng mặc định!"); return; }
+                if (selected.equals("Lobby") || selected.equals("general")) { JOptionPane.showMessageDialog(this, "Không thể xóa kênh mặc định!"); return; }
+                DatabaseManager.deleteRoom(selected); // Xóa DB
                 Room room = rooms.remove(selected);
-                log("[SYSTEM] Đã XÓA phòng: " + selected);
+                log("[SYSTEM] Đã XÓA kênh: " + selected);
                 for (ClientHandler client : room.clients) client.kickFromRoom();
                 updateRoomListUI();
                 userListModel.clear();
@@ -131,7 +132,7 @@ public class ChatServerGUI extends JFrame {
                     for (ClientHandler client : room.clients) {
                         if (client.getUsername().equals(selectedUser)) {
                             client.kickFromRoom();
-                            log("[ADMIN] Đã kích [" + selectedUser + "] ra khỏi phòng [" + selectedRoom + "]");
+                            log("[ADMIN] Đã kích [" + selectedUser + "] khỏi [" + selectedRoom + "]");
                             break;
                         }
                     }
@@ -142,9 +143,9 @@ public class ChatServerGUI extends JFrame {
 
     private JPanel createStyledPanel(JLabel label) {
         JPanel p = new JPanel(new BorderLayout());
-        p.setBackground(Color.WHITE);
+        p.setBackground(bgPanel);
         p.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(new Color(200, 200, 200), 1, true),
+            BorderFactory.createLineBorder(new Color(32, 34, 37), 2),
             new EmptyBorder(10, 10, 10, 10)
         ));
         p.add(label, BorderLayout.CENTER);
@@ -161,7 +162,7 @@ public class ChatServerGUI extends JFrame {
     public void updateStats() {
         SwingUtilities.invokeLater(() -> {
             lblOnline.setText("ONLINE: " + onlineUsers.size());
-            lblRoomCount.setText("SỐ PHÒNG: " + rooms.size());
+            lblRoomCount.setText("SỐ KÊNH: " + rooms.size());
         });
     }
 
@@ -190,8 +191,8 @@ public class ChatServerGUI extends JFrame {
     private void startServerThread() {
         new Thread(() -> {
             try (ServerSocket serverSocket = new ServerSocket(PORT)) {
-                log("=== SERVER ĐÃ KHỞI ĐỘNG THÀNH CÔNG ===");
-                log("Đang lắng nghe kết nối tại Cổng: " + PORT + "...");
+                log("=== SERVER KHỞI ĐỘNG THÀNH CÔNG ===");
+                log("Cổng: " + PORT + " | CSDL: Đã kết nối");
                 updateRoomListUI();
                 while (true) {
                     Socket socket = serverSocket.accept();
@@ -210,7 +211,7 @@ public class ChatServerGUI extends JFrame {
     }
 }
 
-// ================= CODE QUẢN LÝ DƯỚI ĐÂY GIỮ NGUYÊN (Room & ClientHandler) =================
+// ================= CLASS ROOM & CLIENT HANDLER =================
 
 class Room {
     String name;
@@ -223,7 +224,7 @@ class ClientHandler implements Runnable {
     private Socket socket;
     private ChatServerGUI serverGUI;
     private BufferedReader in;
-    private PrintWriter out;
+    public PrintWriter out;
     private String username;
     private String currentRoom;
 
@@ -235,7 +236,6 @@ class ClientHandler implements Runnable {
         try {
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
-            serverGUI.log("[SYSTEM] Máy khách " + socket.getInetAddress().getHostAddress() + " vừa kết nối.");
 
             String request;
             while ((request = in.readLine()) != null) {
@@ -244,20 +244,30 @@ class ClientHandler implements Runnable {
 
                 switch (command) {
                     case "REGISTER":
-                        if (ChatServerGUI.userDb.containsKey(parts[1])) out.println("SERVER|Tài khoản đã tồn tại!");
-                        else { ChatServerGUI.userDb.put(parts[1], parts[2]); out.println("SERVER|Đăng ký thành công!"); }
+                        if (DatabaseManager.registerUser(parts[1], parts[2])) {
+                            out.println("SERVER|Đăng ký thành công! Vui lòng đăng nhập.");
+                        } else {
+                            out.println("SERVER|Tài khoản đã tồn tại!");
+                        }
                         break;
                     case "LOGIN":
-                        if (parts[2].equals(ChatServerGUI.userDb.get(parts[1]))) {
-                            this.username = parts[1]; out.println("LOGIN_SUCCESS|");
+                        if (DatabaseManager.checkLogin(parts[1], parts[2])) {
+                            this.username = parts[1]; 
+                            out.println("LOGIN_SUCCESS|");
                             serverGUI.log("[AUTH] " + username + " đăng nhập thành công.");
-                        } else out.println("SERVER|Sai tài khoản hoặc mật khẩu!");
+                        } else {
+                            out.println("SERVER|Sai tài khoản hoặc mật khẩu!");
+                        }
                         break;
-                    case "GET_ROOMS": out.println("ROOM_LIST|" + String.join(",", ChatServerGUI.rooms.keySet())); break;
+                    case "GET_ROOMS": 
+                        out.println("ROOM_LIST|" + String.join(",", ChatServerGUI.rooms.keySet())); 
+                        break;
                     case "CREATE_ROOM":
-                        if (!ChatServerGUI.rooms.containsKey(parts[1])) {
-                            ChatServerGUI.rooms.put(parts[1], new Room(parts[1]));
-                            serverGUI.log("[USER_ACTION] " + username + " đã tạo phòng: " + parts[1]);
+                        String safeName = parts[1].toLowerCase().replace(" ", "-");
+                        DatabaseManager.addRoom(safeName);
+                        if (!ChatServerGUI.rooms.containsKey(safeName)) {
+                            ChatServerGUI.rooms.put(safeName, new Room(safeName));
+                            serverGUI.log("[USER] " + username + " tạo kênh: " + safeName);
                             serverGUI.updateRoomListUI();
                         }
                         break;
@@ -274,12 +284,12 @@ class ClientHandler implements Runnable {
         if (targetRoom != null) {
             if (currentRoom != null) {
                 ChatServerGUI.rooms.get(currentRoom).clients.remove(this);
-                broadcastToRoom("SERVER|" + username + " đã rời phòng.", false);
+                broadcastToRoom("SERVER|" + username + " đã rời kênh.", false);
             }
             currentRoom = roomName; targetRoom.clients.add(this);
             out.println("JOIN_SUCCESS|" + roomName);
             for (String oldMsg : targetRoom.history) out.println("MSG|" + oldMsg);
-            broadcastToRoom("SERVER|" + username + " đã tham gia phòng!", false);
+            broadcastToRoom("SERVER|" + username + " vừa trượt vào kênh!", false);
             serverGUI.updateRoomUserUI();
         }
     }
