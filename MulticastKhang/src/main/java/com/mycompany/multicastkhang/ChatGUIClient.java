@@ -294,6 +294,15 @@ public class ChatGUIClient extends JFrame {
                         case "SYS": 
                             appendMessage("", p[1], true);
                             break;
+                            
+                        // ĐÂY LÀ ĐOẠN CODE XỬ LÝ KHI BỊ KÍCH (THÊM VÀO ĐÂY)
+                        case "KICKED":
+                            JOptionPane.showMessageDialog(this, "Bạn đã bị Admin kích khỏi kênh này!", "Thông Báo", JOptionPane.WARNING_MESSAGE);
+                            lblTitle.setText("CHƯA CHỌN KÊNH"); 
+                            chatBox.removeAll(); chatBox.revalidate(); chatBox.repaint(); 
+                            roomList.clearSelection(); 
+                            out.println("GET_ROOMS"); 
+                            break;
                     }
                 });
             }

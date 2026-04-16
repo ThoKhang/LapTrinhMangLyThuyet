@@ -423,8 +423,14 @@ class ClientHandler implements Runnable {
     public void kickFromRoom() {
         if (currentRoom != null) {
             Room room = ChatServerGUI.rooms.get(currentRoom);
-            if (room != null) room.clients.remove(this);
+            if (room != null) {
+                // Xóa người này khỏi danh sách phòng
+                room.clients.remove(this);
+                // Thông báo cho những người còn lại biết thanh niên này vừa bị sút
+                broadcastToRoom(username, " đã bị Admin tiễn khỏi kênh!", true, false);
+            }
             currentRoom = null; 
+            // Gửi lệnh KICKED về cho Client đó
             if(out != null) out.println("KICKED|"); 
             serverGUI.updateRoomUserUI();
         }
